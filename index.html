@@ -1,0 +1,223 @@
+<!doctype html>
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>Hứng Táo IQode</title>
+<style>
+:root{--bg:#eaf6e4;--ink:#23311f;--card:#fff;--accent:#d63b2f;--line:#c9dfc0}
+@media (prefers-color-scheme:dark){:root{--bg:#18241a;--ink:#e8f2e3;--card:#243428;--line:#3a5240}}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.5 system-ui,sans-serif;display:flex;flex-direction:column;align-items:center;min-height:100vh}
+#app{width:100%;max-width:480px;padding:12px 16px}
+.bar{display:flex;justify-content:space-between;font-weight:600;margin-bottom:8px;gap:8px;flex-wrap:wrap}
+canvas{width:100%;height:auto;background:#bfe3f5;border-radius:12px;border:2px solid var(--line);touch-action:none;display:block}
+.card{background:var(--card);border:2px solid var(--line);border-radius:12px;padding:16px;margin-top:8px}
+.steps{display:flex;gap:4px;margin-bottom:10px}
+.steps span{flex:1;text-align:center;font-size:12px;padding:4px 0;border-radius:6px;background:var(--line)}
+.steps span.on{background:var(--accent);color:#fff;font-weight:700}
+.steps span.done{opacity:.6}
+h2{margin:0 0 4px;font-size:20px}.skill{opacity:.7;margin:0 0 8px;font-size:14px}
+button{font:inherit;font-weight:600;padding:10px 16px;border-radius:10px;border:0;background:var(--accent);color:#fff;cursor:pointer;margin:6px 6px 0 0}
+button.alt{background:var(--line);color:var(--ink)}
+label{display:block;margin:8px 0 2px;font-size:14px}input[type=range]{width:100%}
+#sw{position:absolute}
+</style>
+</head>
+<body>
+<div id="app">
+  <div class="bar"><span id="lv"></span><span id="hud"></span></div>
+  <canvas id="c" width="360" height="480"></canvas>
+  <div id="panel" class="card"></div>
+</div>
+<script>
+/* ===== Dữ liệu 10 cấp độ: mỗi cấp chạy lại vòng Real > Analyze > Design > Build > Reflect ===== */
+const STEPS=["Real","Analyze","Design","Build","Reflect"];
+const L=[
+{t:"Hứng được táo",s:"Quan sát và tuần tự",
+ real:"Táo rơi từ trên cây mà không ai hứng, táo dập hết. Vấn đề thật là gì?",
+ analyze:"Táo rơi từ đâu, rơi theo hướng nào, giỏ cần làm gì? Chia ra: táo, giỏ, mặt đất.",
+ design:"Vẽ nhanh: mũi tên táo đi xuống, giỏ đi trái phải. Luật: giỏ chạm táo thì ghi điểm.",
+ q:"Giỏ của em đã hứng thiếu táo ở đâu? Em đoán vì sao?",
+ cfg:{goal:8,speed:70,every:1.4,types:["red"]}},
+{t:"Táo sâu xuất hiện",s:"Sự kiện và điều kiện (nếu... thì...)",
+ real:"Có táo bị sâu. Hứng nhầm thì cả rổ hỏng.",
+ analyze:"Cần phân biệt hai loại táo. Hỏi: dựa vào đâu để biết táo nào sâu?",
+ design:"Viết luật: NẾU táo đỏ THÌ +1 điểm. NẾU táo sâu THÌ mất 1 tim.",
+ q:"Luật nào em viết đã hoạt động đúng? Luật nào cần sửa?",
+ cfg:{goal:10,speed:80,every:1.2,types:["red","red","worm"],lives:3}},
+{t:"Điểm và tim",s:"Biến",
+ real:"Người chơi không biết mình đang thắng hay thua.",
+ analyze:"Cần nhớ hai con số thay đổi theo thời gian. Mỗi con số là một biến.",
+ design:"Đặt tên biến: diem, tim. Táo vàng cộng 3 điểm. Vẽ bảng: sự kiện nào đổi biến nào.",
+ q:"Biến nào đổi nhanh nhất? Nếu thêm biến thời gian thì em dùng để làm gì?",
+ cfg:{goal:15,speed:90,every:1.1,types:["red","red","gold","worm"],lives:3}},
+{t:"Nhịp táo rơi",s:"Vòng lặp và quy luật",
+ real:"Em hay đứng sai chỗ vì táo rơi lung tung.",
+ analyze:"Nhìn kỹ: táo có rơi theo một mẫu lặp lại không? Mẫu gồm mấy bước?",
+ design:"Viết mẫu: trái, giữa, phải, giữa, rồi LẶP LẠI. Dùng mẫu này để đứng sẵn trước.",
+ q:"Mẫu gồm mấy bước? Em tìm ra mẫu ở lần thứ mấy?",
+ cfg:{goal:15,speed:95,every:1.0,types:["red"],pattern:[0.15,0.5,0.85,0.5],lives:0}},
+{t:"Giỏ đổi màu",s:"Phân loại và điều kiện kép",
+ real:"Có táo đỏ và táo xanh. Hứng sai màu bị trừ điểm.",
+ analyze:"Giỏ có hai chế độ. Điều kiện: màu táo TRÙNG màu giỏ thì mới được điểm.",
+ design:"Thêm nút đổi màu giỏ. Vẽ bảng 2x2: màu giỏ x màu táo, kết quả là gì.",
+ q:"Em đổi màu giỏ lúc nào: trước hay sau khi táo xuất hiện? Cách nào tốt hơn?",
+ cfg:{goal:14,speed:90,every:1.0,types:["red","green"],colorSwitch:true,lives:3}},
+{t:"Gió thổi",s:"Dự đoán",
+ real:"Gió làm táo trôi lệch, em hay hụt.",
+ analyze:"Táo nghiêng bao nhiêu khi rơi hết chiều cao? Nhìn tốc độ trôi để đoán điểm rơi.",
+ design:"Thêm đường chấm mờ báo điểm rơi dự đoán. Hỏi: có nên cho người chơi thấy đường này không?",
+ q:"Dự đoán của em đúng bao nhiêu lần trên 10 lần?",
+ cfg:{goal:14,speed:85,every:1.1,types:["red","red","gold","worm"],wind:45,hint:true,lives:3}},
+{t:"Hai cây, hai việc",s:"Phân rã bài toán",
+ real:"Màn chơi quá rối: nhiều loại táo, nhiều luật cùng lúc.",
+ analyze:"Chia nhỏ: bài toán 1 là phân loại màu. Bài toán 2 là tránh táo sâu. Giải từng cái rồi ghép.",
+ design:"Bảng luật gộp: đỏ +1, xanh khớp giỏ +2, vàng +3, sâu -1 tim. Kiểm tra từng dòng riêng.",
+ q:"Em giải bài toán nhỏ nào trước? Có bài nhỏ nào em quên?",
+ cfg:{goal:20,speed:100,every:0.8,types:["red","green","gold","worm"],colorSwitch:true,lives:3}},
+{t:"Năng lượng giỏ",s:"Thuật toán và tối ưu",
+ real:"Chạy qua chạy lại làm giỏ hết sức, nhiều táo mà không hứng nổi.",
+ analyze:"Mỗi bước di chuyển tốn năng lượng, đứng yên thì hồi lại. Cần chiến lược chọn táo nào bỏ, táo nào lấy.",
+ design:"Viết thuật toán: NẾU táo xa và chỉ +1 THÌ bỏ. NẾU táo vàng THÌ đi lấy. Thử trên giấy.",
+ q:"Thuật toán em viết có bước nào thừa? Cắt đi thì kết quả ra sao?",
+ cfg:{goal:18,speed:90,every:0.8,types:["red","red","gold","worm"],energy:true,lives:3}},
+{t:"Tìm lỗi",s:"Gỡ lỗi (debug)",
+ real:"Game đang bị lỗi: giỏ chạy ngược chiều với tay em.",
+ analyze:"Lỗi nằm ở đâu: điều khiển, điểm số, hay luật táo? Thử từng nhánh để loại dần.",
+ design:"Chọn nguyên nhân mà em nghĩ đúng, sửa, rồi chạy lại để kiểm tra.",
+ q:"Em thử mấy giả thuyết mới tìm ra lỗi? Lần sau em kiểm tra thứ gì trước?",
+ cfg:{goal:12,speed:85,every:1.1,types:["red","red","worm"],invert:true,lives:3},bug:true},
+{t:"Em thiết kế màn chơi",s:"Hệ thống và sáng tạo",
+ real:"Bạn của em thấy các màn trước quá dễ hoặc quá khó. Em muốn làm màn vừa sức.",
+ analyze:"Mỗi núm vặn ảnh hưởng độ khó thế nào? Đoán trước trước khi vặn.",
+ design:"Chỉnh thông số, ghi lại dự đoán độ khó của em, rồi mới bấm chạy.",
+ q:"Bạn em chơi có thấy vừa sức không? Em đổi thông số nào để vừa hơn?",
+ cfg:{goal:12,speed:90,every:1.0,types:["red","worm"],lives:3},custom:true}
+];
+
+/* ===== Trạng thái ===== */
+const cv=document.getElementById("c"),ctx=cv.getContext("2d"),W=cv.width,H=cv.height;
+const panel=document.getElementById("panel"),lvEl=document.getElementById("lv"),hudEl=document.getElementById("hud");
+let li=0,step=0,cfg,G=null,raf=0,last=0,user={wrong:false};
+
+const stepsBar=()=>`<div class="steps">${STEPS.map((s,i)=>`<span class="${i==step?"on":i<step?"done":""}">${s}</span>`).join("")}</div>`;
+const head=()=>`<h2>Cấp ${li+1}: ${L[li].t}</h2><p class="skill">Tư duy: ${L[li].s}</p>`;
+
+function show(){
+  cancelAnimationFrame(raf);draw(true);
+  lvEl.textContent=`Cấp ${li+1}/10`;hudEl.textContent="";
+  const d=L[li];let h=stepsBar()+head();
+  if(step==0)h+=`<p><b>Vấn đề thật:</b> ${d.real}</p><button onclick="go(1)">Phân tích</button>`;
+  else if(step==1)h+=`<p><b>Phân tích:</b> ${d.analyze}</p><button onclick="go(2)">Thiết kế</button>`;
+  else if(step==2){
+    h+=`<p><b>Thiết kế:</b> ${d.design}</p>`;
+    if(d.bug)h+=`<p>Lỗi nằm ở đâu?</p>
+      <button class="alt" onclick="pick(0)">Luật điểm số</button>
+      <button class="alt" onclick="pick(1)">Điều khiển giỏ</button>
+      <button class="alt" onclick="pick(2)">Loại táo</button><p id="msg"></p>`;
+    else if(d.custom)h+=`<label>Tốc độ rơi <input id="sp" type="range" min="50" max="160" value="90"></label>
+      <label>Tỷ lệ táo sâu (%) <input id="wm" type="range" min="0" max="60" value="25"></label>
+      <label>Gió <input id="wd" type="range" min="0" max="80" value="0"></label>
+      <label>Số táo cần hứng <input id="gl" type="range" min="5" max="30" value="12"></label>
+      <button onclick="go(3)">Xây dựng</button>`;
+    else h+=`<button onclick="go(3)">Xây dựng</button>`;
+  }else if(step==4){
+    h+=`<p><b>Kết quả:</b> ${G.won?"Đã đạt mục tiêu.":"Chưa đạt mục tiêu."} Điểm ${G.score}/${cfg.goal}.</p>
+      <p><b>Câu hỏi nhìn lại:</b> ${d.q}</p>
+      <p>Chọn một thứ để cải tiến ở vòng sau:</p>
+      <button class="alt" onclick="again()">Chơi lại cấp này</button>
+      ${G.won&&li<9?`<button onclick="next()">Lên cấp ${li+2}</button>`:""}
+      ${G.won&&li==9?`<p>Em đã đi hết 10 vòng đời phát triển.</p>`:""}`;
+  }
+  panel.innerHTML=h;
+}
+function go(s){
+  step=s;
+  if(s==3){
+    cfg=Object.assign({},L[li].cfg);
+    if(L[li].custom){const v=id=>+document.getElementById(id).value;
+      cfg.speed=v("sp");cfg.wind=v("wd");cfg.goal=v("gl");
+      const w=v("wm")/100;cfg.types=Array.from({length:10},(_,i)=>i<w*10?"worm":"red");}
+    if(L[li].bug&&user.bugFixed)cfg.invert=false;
+    start();
+  }else show();
+}
+function pick(i){
+  const m=document.getElementById("msg");
+  if(i==1){user.bugFixed=true;m.innerHTML=`Đúng. Điều khiển bị đảo. Đã sửa.<br><button onclick="go(3)">Xây dựng</button>`;}
+  else m.textContent="Em thử chơi thử nhánh này: điểm và loại táo vẫn đúng. Thử nhánh khác.";
+}
+function next(){li++;step=0;user={};show();}
+function again(){step=2;show();if(!L[li].custom&&!L[li].bug)go(3);}
+
+/* ===== Game ===== */
+function start(){
+  G={x:W/2,apples:[],score:0,lives:cfg.lives||0,energy:100,t:0,sp:0,pi:0,color:"red",won:false,over:false};
+  last=performance.now();loop(last);
+}
+function spawn(){
+  const type=cfg.types[Math.floor(Math.random()*cfg.types.length)];
+  let x=cfg.pattern?cfg.pattern[G.pi++%cfg.pattern.length]*W:30+Math.random()*(W-60);
+  G.apples.push({x,y:-10,type,vx:(cfg.wind?(Math.random()-.3)*cfg.wind:0)});
+}
+function loop(now){
+  const dt=Math.min(.05,(now-last)/1000);last=now;
+  G.t+=dt;G.sp+=dt;
+  if(G.sp>cfg.every){G.sp=0;spawn();}
+  G.energy=Math.min(100,G.energy+dt*18);
+  for(const a of G.apples){a.y+=cfg.speed*dt;a.x+=a.vx*dt;
+    if(a.y>H-44&&a.y<H-20&&Math.abs(a.x-G.x)<34&&!a.done){a.done=1;catchApple(a);}
+    else if(a.y>H)a.done=1;}
+  G.apples=G.apples.filter(a=>!a.done);
+  hudEl.textContent=`Điểm ${G.score}/${cfg.goal}`+(cfg.lives?`  Tim ${G.lives}`:"")+(cfg.energy?`  Sức ${Math.round(G.energy)}`:"");
+  draw();
+  if(G.score>=cfg.goal){G.won=true;return finish();}
+  if(cfg.lives&&G.lives<=0)return finish();
+  raf=requestAnimationFrame(loop);
+}
+function catchApple(a){
+  const t=a.type;
+  if(t=="worm")G.lives--;
+  else if(t=="gold")G.score+=3;
+  else if(cfg.colorSwitch){
+    if(t==G.color)G.score+=(L[li].t=="Hai cây, hai việc"?2:1);else G.score=Math.max(0,G.score-1);
+  }else G.score+=1;
+}
+function finish(){setTimeout(()=>{step=4;show();},400);}
+function move(clientX){
+  if(!G||G.won)return;
+  const r=cv.getBoundingClientRect(),nx=(clientX-r.left)/r.width*W,tx=cfg.invert?W-nx:nx;
+  if(cfg.energy){const d=Math.abs(tx-G.x);if(G.energy<=0)return;G.energy-=d*.12;
+    G.x+=Math.sign(tx-G.x)*Math.min(d,6);}else G.x=tx;
+  G.x=Math.max(30,Math.min(W-30,G.x));
+}
+cv.addEventListener("pointermove",e=>move(e.clientX));
+cv.addEventListener("pointerdown",e=>{move(e.clientX);
+  if(cfg&&cfg.colorSwitch&&G&&step==3&&e.clientY<cv.getBoundingClientRect().top+40)G.color=G.color=="red"?"green":"red";});
+addEventListener("keydown",e=>{if(!G)return;
+  if(e.key=="ArrowLeft")G.x=Math.max(30,G.x-24);
+  if(e.key=="ArrowRight")G.x=Math.min(W-30,G.x+24);
+  if(e.key==" "&&cfg.colorSwitch)G.color=G.color=="red"?"green":"red";});
+
+const col={red:"#d63b2f",green:"#4aa23a",gold:"#f2b81c",worm:"#7a4a2a"};
+function draw(idle){
+  ctx.clearRect(0,0,W,H);
+  ctx.fillStyle="#7bbf5a";ctx.fillRect(0,H-20,W,20);
+  ctx.fillStyle="#6b4a2a";ctx.fillRect(W/2-10,0,20,60);
+  ctx.fillStyle="#3f8f3a";ctx.beginPath();ctx.arc(W/2,40,120,Math.PI,0);ctx.fill();
+  if(idle||!G)return;
+  for(const a of G.apples){
+    if(cfg.hint){ctx.strokeStyle="rgba(0,0,0,.2)";ctx.setLineDash([4,4]);ctx.beginPath();
+      const T=(H-30-a.y)/cfg.speed;ctx.moveTo(a.x,a.y);ctx.lineTo(a.x+a.vx*T,H-30);ctx.stroke();ctx.setLineDash([]);}
+    ctx.fillStyle=col[a.type];ctx.beginPath();ctx.arc(a.x,a.y,11,0,7);ctx.fill();
+    if(a.type=="worm"){ctx.fillStyle="#fff";ctx.fillRect(a.x-1,a.y-3,2,6);}
+  }
+  ctx.fillStyle=cfg.colorSwitch?col[G.color]:"#a6682c";
+  ctx.fillRect(G.x-30,H-44,60,24);
+  if(cfg.colorSwitch){ctx.fillStyle="rgba(0,0,0,.45)";ctx.font="13px sans-serif";ctx.fillText("Chạm phía trên để đổi màu giỏ (hoặc phím cách)",14,22);}
+}
+show();
+</script>
+</body>
+</html>
